@@ -491,6 +491,12 @@
   function heartCount(l){
     return (l.hearts && l.hearts.length) || 0;
   }
+  function ivLabel(l){
+    const parts = [];
+    if(l.multiplier) parts.push('x' + l.multiplier);
+    parts.push('IV ' + (l.ivCurrent != null ? l.ivCurrent : '?') + '/' + (l.ivMax != null ? l.ivMax : '?'));
+    return parts.join(' · ');
+  }
   function buildHeartButton(l){
     const btn = el('button',{class:'heart-btn'});
     function paint(){
@@ -763,7 +769,9 @@
       pokedexId: row.pokedex_id,
       sprite: row.sprite,
       level: row.level,
-      iv: row.iv,
+      ivCurrent: row.iv_current,
+      ivMax: row.iv_max,
+      multiplier: row.multiplier,
       shiny: row.shiny,
       rarity: row.rarity,
       price: Number(row.price),
@@ -792,7 +800,9 @@
       pokedex_id: l.pokedexId,
       sprite: l.sprite,
       level: l.level,
-      iv: l.iv,
+      iv_current: l.ivCurrent,
+      iv_max: l.ivMax,
+      multiplier: l.multiplier,
       shiny: l.shiny,
       rarity: l.rarity,
       price: l.price,
@@ -1175,7 +1185,7 @@
     card.appendChild(row1);
     card.appendChild(el('div',{class:'meta'},[
       el('span',{},['Nv. ' + l.level]),
-      el('span',{},['IV ' + l.iv + '%']),
+      el('span',{},[ivLabel(l)]),
       accountPlanOf(l.seller) === 'pro' ? el('span',{class:'badge pro-badge'},['★ APOIADOR']) : null,
       l.status !== 'Disponível' ? el('span',{class:'badge status-' + l.status.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')},[l.status]) : null,
     ]));
@@ -1241,7 +1251,9 @@
 
     const picker = buildPokedexPicker({ onSelect: (p)=>{ if(p && p.rarity){ raritySel.value = p.rarity; } } });
     const fLevel = fieldInput('Nível', 'number', '1-100');
-    const fIv = fieldInput('IV (%)', 'number', '0-100');
+    const fIvCurrent = fieldInput('IV atual', 'number', 'ex: 133');
+    const fIvMax = fieldInput('IV máximo', 'number', 'ex: 186');
+    const fMultiplier = fieldInput('Multiplicador (x)', 'text', 'ex: 1.71');
     const fPrice = fieldInput('Preço de referência (R$)', 'number', 'ex: 25.00');
     const fContact = fieldInput('Contato (Discord / WhatsApp)', 'text', 'ex: discord: usuario#0000');
     const fNotes = fieldTextarea('Observações', 'Nature, moveset, contexto da conta, etc.');
@@ -1252,8 +1264,8 @@
     ]);
     const shinyChk = fShiny.querySelector('input');
 
-    const row = el('div',{class:'field-row'},[fLevel, fIv]);
-    const row2 = el('div',{class:'field-row'},[fPrice, fRarity]);
+    const row = el('div',{class:'field-row'},[fLevel, fIvCurrent, fIvMax]);
+    const row2 = el('div',{class:'field-row'},[fPrice, fMultiplier, fRarity]);
 
     panel.appendChild(picker.container);
     panel.appendChild(row);
@@ -1267,7 +1279,9 @@
       msgSlot.innerHTML = '';
       const sel = picker.getSelected();
       const levelV = Number(fLevel.querySelector('input').value);
-      const ivV = Number(fIv.querySelector('input').value);
+      const ivCurrentV = Number(fIvCurrent.querySelector('input').value);
+      const ivMaxV = Number(fIvMax.querySelector('input').value);
+      const multiplierV = fMultiplier.querySelector('input').value.trim();
       const priceV = Number(fPrice.querySelector('input').value);
       const contactV = fContact.querySelector('input').value.trim();
       const notesV = fNotes.querySelector('textarea').value.trim();
@@ -1291,7 +1305,9 @@
         pokedexId: sel.id,
         sprite: sel.sprite,
         level: levelV,
-        iv: isNaN(ivV) ? 0 : ivV,
+        ivCurrent: isNaN(ivCurrentV) ? 0 : ivCurrentV,
+        ivMax: isNaN(ivMaxV) ? 0 : ivMaxV,
+        multiplier: multiplierV || null,
         shiny: shinyChk.checked,
         rarity: raritySel.value,
         price: priceV,
@@ -1318,7 +1334,7 @@
       }
       msgSlot.appendChild(el('div',{class:'msg ok'},['Anúncio publicado! Já está visível no mercado.']));
       picker.reset();
-      [fLevel,fIv,fPrice,fContact].forEach(f=>{ const i=f.querySelector('input'); if(i) i.value=''; });
+      [fLevel,fIvCurrent,fIvMax,fMultiplier,fPrice,fContact].forEach(f=>{ const i=f.querySelector('input'); if(i) i.value=''; });
       fNotes.querySelector('textarea').value = '';
       shinyChk.checked = false;
       raritySel.value = RARITIES[0];
@@ -1718,7 +1734,7 @@
 
         const infoLines = [
           el('div',{},[ el('b',{},[l.pokemon]), l.shiny ? ' ✦' : '', '  —  R$ ' + Number(l.price).toFixed(2) ]),
-          el('div',{class:'note'},['Nv.' + l.level + ' · IV ' + l.iv + '% · ' + l.rarity + ' · ' + l.comments.length + ' oferta(s)']),
+          el('div',{class:'note'},['Nv.' + l.level + ' · ' + ivLabel(l) + ' · ' + l.rarity + ' · ' + l.comments.length + ' oferta(s)']),
         ];
         if(l.status === 'Disponível' || l.status === 'Reservado'){
           infoLines.push(el('div',{class:'note'},['Expira em ' + new Date(l.expiresAt).toLocaleDateString('pt-BR')]));
@@ -1954,7 +1970,7 @@
     modal.appendChild(titleRow);
     modal.appendChild(el('div',{class:'meta', style:'margin-bottom:10px;'},[
       el('span',{class:'badge'},['Nv. ' + l.level]),
-      el('span',{class:'badge'},['IV ' + l.iv + '%']),
+      el('span',{class:'badge'},[ivLabel(l)]),
       el('span',{class:'badge r-' + l.rarity.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')},[l.rarity]),
       el('span',{class:'badge'},[l.status]),
     ]));
