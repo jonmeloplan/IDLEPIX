@@ -493,8 +493,8 @@
   }
   function ivLabel(l){
     const parts = [];
-    if(l.multiplier) parts.push('x' + l.multiplier);
-    parts.push('IV ' + (l.ivCurrent != null ? l.ivCurrent : '?') + '/' + (l.ivMax != null ? l.ivMax : '?'));
+    if(l.quality) parts.push('x' + l.quality);
+    parts.push('IV ' + (l.ivText || '?'));
     return parts.join(' · ');
   }
   function buildHeartButton(l){
@@ -768,10 +768,10 @@
       pokemon: row.pokemon,
       pokedexId: row.pokedex_id,
       sprite: row.sprite,
+      imageUrl: row.image_url,
       level: row.level,
-      ivCurrent: row.iv_current,
-      ivMax: row.iv_max,
-      multiplier: row.multiplier,
+      ivText: row.iv_text,
+      quality: row.quality,
       shiny: row.shiny,
       rarity: row.rarity,
       price: Number(row.price),
@@ -799,10 +799,10 @@
       pokemon: l.pokemon,
       pokedex_id: l.pokedexId,
       sprite: l.sprite,
+      image_url: l.imageUrl,
       level: l.level,
-      iv_current: l.ivCurrent,
-      iv_max: l.ivMax,
-      multiplier: l.multiplier,
+      iv_text: l.ivText,
+      quality: l.quality,
       shiny: l.shiny,
       rarity: l.rarity,
       price: l.price,
@@ -1187,6 +1187,7 @@
       el('span',{},['Nv. ' + l.level]),
       el('span',{},[ivLabel(l)]),
       accountPlanOf(l.seller) === 'pro' ? el('span',{class:'badge pro-badge'},['★ APOIADOR']) : null,
+      l.imageUrl ? el('span',{class:'badge'},['📎 print']) : null,
       l.status !== 'Disponível' ? el('span',{class:'badge status-' + l.status.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')},[l.status]) : null,
     ]));
     card.appendChild(el('div',{class:'price'},['R$ ' + Number(l.price).toFixed(2)]));
@@ -1251,9 +1252,8 @@
 
     const picker = buildPokedexPicker({ onSelect: (p)=>{ if(p && p.rarity){ raritySel.value = p.rarity; } } });
     const fLevel = fieldInput('Nível', 'number', '1-100');
-    const fIvCurrent = fieldInput('IV atual', 'number', 'ex: 133');
-    const fIvMax = fieldInput('IV máximo', 'number', 'ex: 186');
-    const fMultiplier = fieldInput('Multiplicador (x)', 'text', 'ex: 1.71');
+    const fQuality = fieldInput('Qualidade', 'text', 'ex: 1.71');
+    const fIvText = fieldInput('IV', 'text', 'ex: 133/186');
     const fPrice = fieldInput('Preço de referência (R$)', 'number', 'ex: 25.00');
     const fContact = fieldInput('Contato (Discord / WhatsApp)', 'text', 'ex: discord: usuario#0000');
     const fNotes = fieldTextarea('Observações', 'Nature, moveset, contexto da conta, etc.');
@@ -1264,8 +1264,14 @@
     ]);
     const shinyChk = fShiny.querySelector('input');
 
-    const row = el('div',{class:'field-row'},[fLevel, fIvCurrent, fIvMax]);
-    const row2 = el('div',{class:'field-row'},[fPrice, fMultiplier, fRarity]);
+    const row = el('div',{class:'field-row'},[fLevel, fQuality, fIvText]);
+    const row2 = el('div',{class:'field-row'},[fPrice, fRarity]);
+
+    const fImage = el('div',{class:'field'},[
+      el('label',{},['Print do Pokémon no jogo (opcional)']),
+      el('input',{type:'file', accept:'image/*'}),
+      el('div',{class:'note'},['Anexe um print da tela do jogo pra comprovar nível, IV, qualidade etc.']),
+    ]);
 
     panel.appendChild(picker.container);
     panel.appendChild(row);
@@ -1273,15 +1279,15 @@
     panel.appendChild(fShiny);
     panel.appendChild(fContact);
     panel.appendChild(fNotes);
+    panel.appendChild(fImage);
 
     const submitBtn = el('button',{class:'btn'},['Publicar anúncio']);
     submitBtn.addEventListener('click', async ()=>{
       msgSlot.innerHTML = '';
       const sel = picker.getSelected();
       const levelV = Number(fLevel.querySelector('input').value);
-      const ivCurrentV = Number(fIvCurrent.querySelector('input').value);
-      const ivMaxV = Number(fIvMax.querySelector('input').value);
-      const multiplierV = fMultiplier.querySelector('input').value.trim();
+      const qualityV = fQuality.querySelector('input').value.trim();
+      const ivTextV = fIvText.querySelector('input').value.trim();
       const priceV = Number(fPrice.querySelector('input').value);
       const contactV = fContact.querySelector('input').value.trim();
       const notesV = fNotes.querySelector('textarea').value.trim();
@@ -1297,17 +1303,36 @@
       submitBtn.disabled = true;
       submitBtn.textContent = 'Publicando...';
       const nowTs = Date.now();
+      const sellerIdV = (state.users[state.currentUser] && state.users[state.currentUser].id);
+
+      let imageUrl = null;
+      const imageFile = fImage.querySelector('input[type="file"]').files[0];
+      if(imageFile && sb){
+        submitBtn.textContent = 'Enviando print...';
+        const path = sellerIdV + '/' + newId() + '-' + imageFile.name;
+        const { error: upErr } = await sb.storage.from('listing-images').upload(path, imageFile);
+        if(upErr){
+          msgSlot.appendChild(el('div',{class:'msg err'},['Não foi possível enviar o print (o anúncio não foi publicado): ' + upErr.message]));
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Publicar anúncio';
+          return;
+        }
+        const { data: pub } = sb.storage.from('listing-images').getPublicUrl(path);
+        imageUrl = pub.publicUrl;
+        submitBtn.textContent = 'Publicando...';
+      }
+
       const listing = {
         id: newId(),
-        sellerId: (state.users[state.currentUser] && state.users[state.currentUser].id),
+        sellerId: sellerIdV,
         seller: state.currentUser,
         pokemon: sel.name,
         pokedexId: sel.id,
         sprite: sel.sprite,
+        imageUrl: imageUrl,
         level: levelV,
-        ivCurrent: isNaN(ivCurrentV) ? 0 : ivCurrentV,
-        ivMax: isNaN(ivMaxV) ? 0 : ivMaxV,
-        multiplier: multiplierV || null,
+        ivText: ivTextV || null,
+        quality: qualityV || null,
         shiny: shinyChk.checked,
         rarity: raritySel.value,
         price: priceV,
@@ -1334,7 +1359,8 @@
       }
       msgSlot.appendChild(el('div',{class:'msg ok'},['Anúncio publicado! Já está visível no mercado.']));
       picker.reset();
-      [fLevel,fIvCurrent,fIvMax,fMultiplier,fPrice,fContact].forEach(f=>{ const i=f.querySelector('input'); if(i) i.value=''; });
+      [fLevel,fQuality,fIvText,fPrice,fContact].forEach(f=>{ const i=f.querySelector('input'); if(i) i.value=''; });
+      fImage.querySelector('input[type="file"]').value = '';
       fNotes.querySelector('textarea').value = '';
       shinyChk.checked = false;
       raritySel.value = RARITIES[0];
@@ -1986,6 +2012,13 @@
     if(sellerPbModal) sellerRow.appendChild(sellerPbModal);
     modal.appendChild(sellerRow);
     if(l.notes) modal.appendChild(el('p',{style:'color:var(--text-dim); font-size:12px;'},[l.notes]));
+    if(l.imageUrl){
+      const imgLink = el('a',{href:l.imageUrl, target:'_blank', rel:'noopener noreferrer', style:'display:block; margin:10px 0;'},[
+        el('img',{src:l.imageUrl, style:'max-width:100%; max-height:280px; border:2px solid var(--line); display:block;', alt:'Print do Pokémon no jogo'}),
+      ]);
+      modal.appendChild(imgLink);
+      modal.appendChild(el('div',{class:'note', style:'margin-bottom:10px;'},['📎 Print enviado pelo vendedor — clique pra ampliar.']));
+    }
 
     // ---- Gestão da negociação (encerrar / cancelar / confirmar / resumo) ----
     const isSeller = state.currentUser === l.seller;
