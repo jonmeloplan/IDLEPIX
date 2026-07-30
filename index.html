@@ -691,6 +691,7 @@
     authTab: 'login',
     filter: { q:'', shinyOnly:false, sort:'recent' },
     openListingId: null,
+    editListingId: null,
     loaded: false,
     pokedex: [],       // [{id, name, sprite}] carregado da Poképedia (PokeAPI, Gen 1-2)
     pokedexError: false,
@@ -1369,6 +1370,140 @@
     container.appendChild(panel);
   }
 
+  // ---------- EDITAR ANÚNCIO (enquanto ainda está Disponível/Reservado) ----------
+  function renderEditarAnuncio(container){
+    container.appendChild(el('h2',{class:'section-title'},['Editar anúncio']));
+
+    const l = state.listings.find(x => x.id === state.editListingId);
+    if(!l){
+      container.appendChild(el('div',{class:'panel pixel-border'},[
+        el('p',{},['Anúncio não encontrado.']),
+        el('button',{class:'btn ghost', onclick:()=>setView('conta')},['Voltar pra Minha conta']),
+      ]));
+      return;
+    }
+    if(!state.currentUser || l.seller !== state.currentUser){
+      container.appendChild(el('div',{class:'panel pixel-border'},[
+        el('p',{},['Você não pode editar este anúncio.']),
+        el('button',{class:'btn ghost', onclick:()=>setView('conta')},['Voltar pra Minha conta']),
+      ]));
+      return;
+    }
+    if(l.status !== 'Disponível' && l.status !== 'Reservado'){
+      container.appendChild(el('div',{class:'panel pixel-border'},[
+        el('p',{},['Este anúncio não pode mais ser editado (status: ' + l.status + ').']),
+        el('button',{class:'btn ghost', onclick:()=>setView('conta')},['Voltar pra Minha conta']),
+      ]));
+      return;
+    }
+
+    const panel = el('div',{class:'panel wide pixel-border'});
+    panel.appendChild(el('div',{style:'display:flex; align-items:center; gap:10px; margin-bottom:14px;'},[
+      l.sprite ? el('img',{class:'poke-sprite', src:l.sprite, width:'40', height:'40', alt:l.pokemon}) : null,
+      el('div',{class:'name'},[l.pokemon]),
+    ]));
+
+    const msgSlot = el('div',{});
+    panel.appendChild(msgSlot);
+
+    const fLevel = fieldInput('Nível', 'number', '1-100');
+    fLevel.querySelector('input').value = l.level;
+    const fQuality = fieldInput('Qualidade', 'text', 'ex: 1.71');
+    fQuality.querySelector('input').value = l.quality || '';
+    const fIvText = fieldInput('IV', 'text', 'ex: 133/186');
+    fIvText.querySelector('input').value = l.ivText || '';
+    panel.appendChild(el('div',{class:'field-row'},[fLevel, fQuality, fIvText]));
+
+    const fPrice = fieldInput('Preço de referência (R$)', 'number', 'ex: 25.00');
+    fPrice.querySelector('input').value = l.price;
+    const fRarity = el('div',{class:'field'},[el('label',{},['Raridade'])]);
+    const raritySel = el('select',{});
+    RARITIES.forEach(r => raritySel.appendChild(el('option',{value:r},[r])));
+    raritySel.value = l.rarity;
+    fRarity.appendChild(raritySel);
+    panel.appendChild(el('div',{class:'field-row'},[fPrice, fRarity]));
+
+    const fShiny = el('div',{class:'field'},[
+      el('label',{},['Shiny']),
+      el('div',{class:'check-row'},[ (()=>{ const c = el('input',{type:'checkbox', id:'editShinyChk'}); c.checked = !!l.shiny; return c; })(), el('label',{for:'editShinyChk'},['Esta criatura é shiny']) ]),
+    ]);
+    panel.appendChild(fShiny);
+    const shinyChk = fShiny.querySelector('input');
+
+    const fContact = fieldInput('Contato (Discord / WhatsApp)', 'text', 'ex: discord: usuario#0000');
+    fContact.querySelector('input').value = l.contact;
+    panel.appendChild(fContact);
+
+    const fNotes = fieldTextarea('Observações', 'Nature, moveset, contexto da conta, etc.');
+    fNotes.querySelector('textarea').value = l.notes || '';
+    panel.appendChild(fNotes);
+
+    const fImage = el('div',{class:'field'},[
+      el('label',{},['Print do Pokémon no jogo (opcional)']),
+      el('input',{type:'file', accept:'image/*'}),
+      el('div',{class:'note'},[ l.imageUrl ? 'Já tem um print anexado — envie outro arquivo só se quiser substituir.' : 'Anexe um print da tela do jogo pra comprovar nível, IV, qualidade etc.' ]),
+    ]);
+    panel.appendChild(fImage);
+    if(l.imageUrl){
+      panel.appendChild(el('img',{src:l.imageUrl, style:'max-width:200px; max-height:160px; border:2px solid var(--line); margin-top:-6px; margin-bottom:10px;', alt:'Print atual'}));
+    }
+
+    const saveBtn = el('button',{class:'btn'},['Salvar alterações']);
+    saveBtn.addEventListener('click', async ()=>{
+      msgSlot.innerHTML = '';
+      const levelV = Number(fLevel.querySelector('input').value);
+      const priceV = Number(fPrice.querySelector('input').value);
+      const contactV = fContact.querySelector('input').value.trim();
+      if(!levelV || !priceV || !contactV){
+        msgSlot.appendChild(el('div',{class:'msg err'},['Preencha ao menos nível, preço e contato.']));
+        return;
+      }
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Salvando...';
+
+      const imageFile = fImage.querySelector('input[type="file"]').files[0];
+      if(imageFile && sb){
+        saveBtn.textContent = 'Enviando print...';
+        const path = l.sellerId + '/' + newId() + '-' + imageFile.name;
+        const { error: upErr } = await sb.storage.from('listing-images').upload(path, imageFile);
+        if(upErr){
+          msgSlot.appendChild(el('div',{class:'msg err'},['Não foi possível enviar o print: ' + upErr.message]));
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Salvar alterações';
+          return;
+        }
+        const { data: pub } = sb.storage.from('listing-images').getPublicUrl(path);
+        l.imageUrl = pub.publicUrl;
+        saveBtn.textContent = 'Salvando...';
+      }
+
+      l.level = levelV;
+      l.quality = fQuality.querySelector('input').value.trim() || null;
+      l.ivText = fIvText.querySelector('input').value.trim() || null;
+      l.price = priceV;
+      l.rarity = raritySel.value;
+      l.shiny = shinyChk.checked;
+      l.contact = contactV;
+      l.notes = fNotes.querySelector('textarea').value.trim();
+
+      const ok = await saveListings();
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Salvar alterações';
+      if(!ok){
+        msgSlot.appendChild(el('div',{class:'msg err'},['Não foi possível salvar agora. Tente novamente em instantes.']));
+        return;
+      }
+      state.editListingId = null;
+      setView('conta');
+    });
+    panel.appendChild(saveBtn);
+    const cancelEditBtn = el('button',{class:'btn ghost', style:'margin-left:8px;'},['Cancelar']);
+    cancelEditBtn.addEventListener('click', ()=>{ state.editListingId = null; setView('conta'); });
+    panel.appendChild(cancelEditBtn);
+
+    container.appendChild(panel);
+  }
+
   // ---------- APOIAR O PROJETO (limite de anúncios) ----------
   function renderUpgradeGate(activeCount){
     const wrap = el('div',{class:'panel pixel-border'});
@@ -1791,6 +1926,10 @@
           const closeBtn = el('button',{class:'btn ghost'},['Encerrar (venda feita)']);
           closeBtn.addEventListener('click', ()=>{ state.openListingId = l.id; render(); });
           actions.appendChild(closeBtn);
+
+          const editBtn = el('button',{class:'btn ghost'},['Editar']);
+          editBtn.addEventListener('click', ()=>{ state.editListingId = l.id; setView('editar'); });
+          actions.appendChild(editBtn);
 
           const cancelBtn = el('button',{class:'btn danger'},['Cancelar anúncio']);
           cancelBtn.addEventListener('click', async ()=>{
@@ -2308,6 +2447,7 @@
     if(state.view === 'home') renderHome(main);
     if(state.view === 'mercado') renderMercado(main);
     if(state.view === 'anunciar') renderAnunciar(main);
+    if(state.view === 'editar') renderEditarAnuncio(main);
     if(state.view === 'apoiar') renderApoiar(main);
     if(state.view === 'conta') renderConta(main);
     if(state.view === 'termos') renderTermos(main);
