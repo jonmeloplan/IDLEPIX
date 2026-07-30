@@ -457,6 +457,16 @@
     });
   }
 
+  const MAX_IMAGE_MB = 5;
+  function sanitizeFileName(name){
+    return (name || 'arquivo').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
+  }
+  function validateImageFile(file){
+    if(!file.type || !file.type.startsWith('image/')) return 'Escolha um arquivo de imagem (jpg, png, etc).';
+    if(file.size > MAX_IMAGE_MB * 1024 * 1024) return 'Imagem muito grande (máximo ' + MAX_IMAGE_MB + 'MB).';
+    return null;
+  }
+
   const RARITIES = ["Comum","Incomum","Raro","Épico","Lendário","Mítico"];
   // Raridade oficial só é conhecida com certeza para lendários/míticos canônicos (Gen 1-2).
   // As demais espécies entram como "Comum" por padrão e o vendedor ajusta conforme o jogo mostrar.
@@ -957,8 +967,7 @@
   function el(tag, attrs, children){
     const e = document.createElement(tag);
     if(attrs) for(const k in attrs){
-      if(k === 'html'){ e.innerHTML = attrs[k]; }
-      else if(k.startsWith('on')){ e.addEventListener(k.slice(2), attrs[k]); }
+      if(k.startsWith('on')){ e.addEventListener(k.slice(2), attrs[k]); }
       else e.setAttribute(k, attrs[k]);
     }
     (children||[]).forEach(c => { if(c) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
@@ -1335,8 +1344,15 @@
       let imageUrl = null;
       const imageFile = fImage.querySelector('input[type="file"]').files[0];
       if(imageFile && sb){
+        const fileErr = validateImageFile(imageFile);
+        if(fileErr){
+          msgSlot.appendChild(el('div',{class:'msg err'},[fileErr]));
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Publicar anúncio';
+          return;
+        }
         submitBtn.textContent = 'Enviando print...';
-        const path = sellerIdV + '/' + newId() + '-' + imageFile.name;
+        const path = sellerIdV + '/' + newId() + '-' + sanitizeFileName(imageFile.name);
         const { error: upErr } = await sb.storage.from('listing-images').upload(path, imageFile);
         if(upErr){
           msgSlot.appendChild(el('div',{class:'msg err'},['Não foi possível enviar o print (o anúncio não foi publicado): ' + upErr.message]));
@@ -1492,8 +1508,15 @@
 
       const imageFile = fImage.querySelector('input[type="file"]').files[0];
       if(imageFile && sb){
+        const fileErr = validateImageFile(imageFile);
+        if(fileErr){
+          msgSlot.appendChild(el('div',{class:'msg err'},[fileErr]));
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Salvar alterações';
+          return;
+        }
         saveBtn.textContent = 'Enviando print...';
-        const path = l.sellerId + '/' + newId() + '-' + imageFile.name;
+        const path = l.sellerId + '/' + newId() + '-' + sanitizeFileName(imageFile.name);
         const { error: upErr } = await sb.storage.from('listing-images').upload(path, imageFile);
         if(upErr){
           msgSlot.appendChild(el('div',{class:'msg err'},['Não foi possível enviar o print: ' + upErr.message]));
