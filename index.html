@@ -894,10 +894,13 @@
     state.loaded = true;
   }
 
-  async function saveUsers(){
+  async function saveUsers(target){
     if(!sb) return false;
+    const usernames = Array.isArray(target) ? target : (target ? [target] : Object.keys(state.users));
     try{
-      const rows = Object.keys(state.users).map(username => userToRow(state.users[username], username));
+      const rows = usernames
+        .map(username => userToRow(state.users[username], username))
+        .filter(r => r && r.id);
       if(rows.length === 0) return true;
       const { error } = await sb.from('profiles').upsert(rows, { onConflict:'id' });
       if(error) throw error;
@@ -2042,7 +2045,7 @@
             return;
           }
           rec.accountPlan = 'pro';
-          const ok1 = await saveUsers();
+          const ok1 = await saveUsers(r.username);
           const ok2 = await saveUpgradeRequests();
           if(!ok1 || !ok2){
             r.status = 'pendente';
@@ -2082,7 +2085,7 @@
         const proBtn = el('button',{class:'btn ghost'},[ accountPlanOf(u) === 'pro' ? 'Remover PRO' : 'Tornar PRO' ]);
         proBtn.addEventListener('click', async ()=>{
           rec.accountPlan = (accountPlanOf(u) === 'pro') ? 'gratis' : 'pro';
-          await saveUsers();
+          await saveUsers(u);
           render();
         });
         actionsRow.appendChild(proBtn);
@@ -2090,7 +2093,7 @@
         const banBtn = el('button',{class: rec.banned ? 'btn ghost' : 'btn danger'},[ rec.banned ? 'Desbanir' : 'Banir' ]);
         banBtn.addEventListener('click', async ()=>{
           rec.banned = !rec.banned;
-          await saveUsers();
+          await saveUsers(u);
           render();
         });
         actionsRow.appendChild(banBtn);
@@ -2268,11 +2271,16 @@
         }
         l.status = 'Concluído';
         l.rating = { stars, comment: ratingComment.value.trim(), ratedAt: Date.now() };
-        if(!state.users[l.seller]) state.users[l.seller] = { password:'', createdAt: Date.now(), accountPlan:'gratis' };
-        state.users[l.seller].ratingSum = (state.users[l.seller].ratingSum || 0) + stars;
-        state.users[l.seller].ratingCount = (state.users[l.seller].ratingCount || 0) + 1;
+        if(!state.users[l.seller] && sb){
+          const { data: sellerProf } = await sb.from('profiles').select('*').eq('username', l.seller).single();
+          if(sellerProf) state.users[l.seller] = profileRowToUser(sellerProf);
+        }
+        if(state.users[l.seller]){
+          state.users[l.seller].ratingSum = (state.users[l.seller].ratingSum || 0) + stars;
+          state.users[l.seller].ratingCount = (state.users[l.seller].ratingCount || 0) + 1;
+        }
         const ok1 = await saveListings(l);
-        const ok2 = await saveUsers();
+        const ok2 = await saveUsers(l.seller);
         if(!ok1 || !ok2){
           rateMsg.appendChild(el('div',{class:'msg err'},['Não foi possível registrar agora. Tente novamente.']));
           return;
