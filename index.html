@@ -692,6 +692,8 @@
     filter: { q:'', shinyOnly:false, sort:'recent' },
     openListingId: null,
     editListingId: null,
+    justConfirmedEmail: false,
+    authRedirectError: false,
     loaded: false,
     pokedex: [],       // [{id, name, sprite}] carregado da Poképedia (PokeAPI, Gen 1-2)
     pokedexError: false,
@@ -1001,6 +1003,19 @@
   }
 
   function renderHome(container){
+    if(state.justConfirmedEmail){
+      container.appendChild(el('div',{class:'msg ok', style:'margin-bottom:16px;'},[
+        '✓ E-mail confirmado! Sua conta já está pronta — vá em ', el('b',{},['ENTRAR']), ' pra fazer login.'
+      ]));
+      state.justConfirmedEmail = false;
+    }
+    if(state.authRedirectError){
+      container.appendChild(el('div',{class:'msg err', style:'margin-bottom:16px;'},[
+        'O link que você clicou expirou ou já foi usado. Peça pra gente reenviar a confirmação, ou tente fazer login normalmente — talvez sua conta já esteja confirmada.'
+      ]));
+      state.authRedirectError = false;
+    }
+
     const hero = el('div',{class:'hero'});
 
     const bgLayout = [
@@ -2454,6 +2469,21 @@
 
     renderModal();
   }
+
+  function checkAuthRedirect(){
+    const hash = window.location.hash || '';
+    if(hash.includes('access_token') || hash.includes('type=signup') || hash.includes('type=email_change') || hash.includes('type=recovery')){
+      state.justConfirmedEmail = true;
+      const cleanUrl = window.location.pathname + window.location.search;
+      window.history.replaceState(null, '', cleanUrl);
+    }
+    if(hash.includes('error=')){
+      state.authRedirectError = true;
+      const cleanUrl = window.location.pathname + window.location.search;
+      window.history.replaceState(null, '', cleanUrl);
+    }
+  }
+  checkAuthRedirect();
 
   Promise.all([loadState(), loadPokedex()]).then(async ()=>{
     if(runListingLifecycle()){
