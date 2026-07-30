@@ -473,6 +473,7 @@
 
   // ---- Ciclo de vida do anúncio ----
   const LISTING_DURATION_DAYS = 7;   // anúncio sem ação expira sozinho após esse prazo
+  const IV_MAX = 186; // teto fixo de IV do jogo — o vendedor só digita o valor atual
   const AUTO_FINALIZE_DAYS = 3;      // se o comprador não confirmar, o negócio se conclui sozinho (sem avaliação)
 
   // Pokébola em SVG embutido, construído como elementos DOM reais (não via innerHTML) —
@@ -1269,7 +1270,10 @@
     const picker = buildPokedexPicker({ onSelect: (p)=>{ if(p && p.rarity){ raritySel.value = p.rarity; } } });
     const fLevel = fieldInput('Nível', 'number', '1-100');
     const fQuality = fieldInput('Qualidade', 'text', 'ex: 1.71');
-    const fIvText = fieldInput('IV', 'text', 'ex: 133/186');
+    const fIvText = fieldInput('IV', 'number', 'ex: 133');
+    fIvText.querySelector('input').setAttribute('min','0');
+    fIvText.querySelector('input').setAttribute('max', String(IV_MAX));
+    fIvText.appendChild(el('div',{class:'note'},['Máximo fixo /' + IV_MAX + ' — digite só o valor atual do Pokémon.']));
     const fPrice = fieldInput('Preço de referência (R$)', 'number', 'ex: 25.00');
     const fContact = fieldInput('Contato (Discord / WhatsApp)', 'text', 'ex: discord: usuario#0000');
     const fNotes = fieldTextarea('Observações', 'Nature, moveset, contexto da conta, etc.');
@@ -1303,7 +1307,8 @@
       const sel = picker.getSelected();
       const levelV = Number(fLevel.querySelector('input').value);
       const qualityV = fQuality.querySelector('input').value.trim();
-      const ivTextV = fIvText.querySelector('input').value.trim();
+      const ivRaw = fIvText.querySelector('input').value.trim();
+      const ivTextV = ivRaw ? (ivRaw + '/' + IV_MAX) : '';
       const priceV = Number(fPrice.querySelector('input').value);
       const contactV = fContact.querySelector('input').value.trim();
       const notesV = fNotes.querySelector('textarea').value.trim();
@@ -1425,8 +1430,11 @@
     fLevel.querySelector('input').value = l.level;
     const fQuality = fieldInput('Qualidade', 'text', 'ex: 1.71');
     fQuality.querySelector('input').value = l.quality || '';
-    const fIvText = fieldInput('IV', 'text', 'ex: 133/186');
-    fIvText.querySelector('input').value = l.ivText || '';
+    const fIvText = fieldInput('IV', 'number', 'ex: 133');
+    fIvText.querySelector('input').setAttribute('min','0');
+    fIvText.querySelector('input').setAttribute('max', String(IV_MAX));
+    fIvText.querySelector('input').value = l.ivText ? l.ivText.split('/')[0] : '';
+    fIvText.appendChild(el('div',{class:'note'},['Máximo fixo /' + IV_MAX + ' — digite só o valor atual do Pokémon.']));
     panel.appendChild(el('div',{class:'field-row'},[fLevel, fQuality, fIvText]));
 
     const fPrice = fieldInput('Preço de referência (R$)', 'number', 'ex: 25.00');
@@ -1494,7 +1502,7 @@
 
       l.level = levelV;
       l.quality = fQuality.querySelector('input').value.trim() || null;
-      l.ivText = fIvText.querySelector('input').value.trim() || null;
+      { const ivRaw2 = fIvText.querySelector('input').value.trim(); l.ivText = ivRaw2 ? (ivRaw2 + '/' + IV_MAX) : null; }
       l.price = priceV;
       l.rarity = raritySel.value;
       l.shiny = shinyChk.checked;
