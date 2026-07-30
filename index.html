@@ -443,7 +443,7 @@
 (function(){
   // ---- Conexão com o Supabase (banco de dados + login reais) ----
   const SUPABASE_URL = 'https://eedoksdoxhgbjiotnfeb.supabase.co';
-  const SUPABASE_ANON_KEY = 'sb_publishable_fBEEGUdFpgNjMaj8SzzZDQ_-YBvtxgM';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVlZG9rc2RveGhnYmppb3RuZmViIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzNjEzMTEsImV4cCI6MjEwMDkzNzMxMX0.Ro1XOGK5DEKC4ni_HG7lqz5w_bZlUrsE24OAARDeuas';
   const sb = (typeof supabase !== 'undefined')
     ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
