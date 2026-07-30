@@ -514,7 +514,7 @@
       const idx = l.hearts.indexOf(state.currentUser);
       if(idx >= 0) l.hearts.splice(idx,1); else l.hearts.push(state.currentUser);
       paint();
-      await saveListings();
+      await saveListings(l);
     });
     return btn;
   }
@@ -588,21 +588,23 @@
   const CANCEL_DELAY_HOURS = 24; // cancelamento pedido pelo vendedor só sai do ar depois desse prazo
   function runListingLifecycle(){
     const now = Date.now();
-    let changed = false;
+    const changed = [];
     state.listings.forEach(l=>{
+      let didChange = false;
       if((l.status === 'Disponível' || l.status === 'Reservado') && l.expiresAt && l.expiresAt < now){
         l.status = 'Expirado';
-        changed = true;
+        didChange = true;
       }
       if(l.status === 'Encerrado' && l.closedAt && (now - l.closedAt) > AUTO_FINALIZE_DAYS * 86400000){
         l.status = 'Concluído';
         l.autoFinalized = true;
-        changed = true;
+        didChange = true;
       }
       if(l.status === 'Cancelando' && l.cancelRequestedAt && (now - l.cancelRequestedAt) > CANCEL_DELAY_HOURS * 3600000){
         l.status = '__deleted__';
-        changed = true;
+        didChange = true;
       }
+      if(didChange) changed.push(l);
     });
     return changed;
   }
@@ -902,10 +904,11 @@
       return true;
     }catch(e){ console.error('Falha ao salvar perfis:', e); return false; }
   }
-  async function saveListings(){
+  async function saveListings(target){
     if(!sb) return false;
+    const list = Array.isArray(target) ? target : (target ? [target] : state.listings);
     try{
-      const rows = state.listings.map(listingToRow);
+      const rows = list.map(listingToRow);
       if(rows.length === 0) return true;
       const { error } = await sb.from('listings').upsert(rows, { onConflict:'id' });
       if(error) throw error;
@@ -1370,7 +1373,7 @@
         hearts: [],
       };
       state.listings.push(listing);
-      const ok = await saveListings();
+      const ok = await saveListings(listing);
       submitBtn.disabled = false;
       submitBtn.textContent = 'Publicar anúncio';
       if(!ok){
@@ -1509,7 +1512,7 @@
       l.contact = contactV;
       l.notes = fNotes.querySelector('textarea').value.trim();
 
-      const ok = await saveListings();
+      const ok = await saveListings(l);
       saveBtn.disabled = false;
       saveBtn.textContent = 'Salvar alterações';
       if(!ok){
@@ -1943,7 +1946,7 @@
         if(l.status === 'Disponível' || l.status === 'Reservado'){
           const statusSel = el('select',{});
           STATUSES.forEach(s => { const o = el('option',{value:s},[s]); if(l.status===s) o.selected=true; statusSel.appendChild(o); });
-          statusSel.addEventListener('change', async e=>{ l.status = e.target.value; await saveListings(); render(); });
+          statusSel.addEventListener('change', async e=>{ l.status = e.target.value; await saveListings(l); render(); });
           actions.appendChild(statusSel);
 
           const closeBtn = el('button',{class:'btn ghost'},['Encerrar (venda feita)']);
@@ -1959,7 +1962,7 @@
             l.statusBeforeCancel = l.status;
             l.status = 'Cancelando';
             l.cancelRequestedAt = Date.now();
-            await saveListings();
+            await saveListings(l);
             render();
           });
           actions.appendChild(cancelBtn);
@@ -1970,7 +1973,7 @@
           undoBtn.addEventListener('click', async ()=>{
             l.status = l.statusBeforeCancel || 'Disponível';
             l.cancelRequestedAt = null;
-            await saveListings();
+            await saveListings(l);
             render();
           });
           actions.appendChild(undoBtn);
@@ -1981,7 +1984,7 @@
           repBtn.addEventListener('click', async ()=>{
             const clone = cloneForRepublish(l);
             state.listings.push(clone);
-            await saveListings();
+            await saveListings(clone);
             render();
           });
           actions.appendChild(repBtn);
@@ -1989,7 +1992,7 @@
           const delBtn = el('button',{class:'btn danger'},['Remover']);
           delBtn.addEventListener('click', async ()=>{
             l.status = '__deleted__';
-            await saveListings();
+            await saveListings(l);
             render();
           });
           actions.appendChild(delBtn);
@@ -2126,7 +2129,7 @@
         const removeBtn = el('button',{class:'btn danger'},['Remover (moderação)']);
         removeBtn.addEventListener('click', async ()=>{
           l.status = '__deleted__';
-          await saveListings();
+          await saveListings(l);
           render();
         });
         row.appendChild(el('div',{style:'display:flex; gap:8px;'},[viewBtn, removeBtn]));
@@ -2216,7 +2219,7 @@
         l.status = 'Encerrado';
         l.buyer = buyerName;
         l.closedAt = Date.now();
-        const ok = await saveListings();
+        const ok = await saveListings(l);
         if(!ok){
           l.status = previousStatus;
           l.buyer = null;
@@ -2238,7 +2241,7 @@
         l.status = 'Disponível';
         l.buyer = null;
         l.closedAt = null;
-        await saveListings();
+        await saveListings(l);
         render();
       });
       box.appendChild(cancelBtn);
@@ -2268,7 +2271,7 @@
         if(!state.users[l.seller]) state.users[l.seller] = { password:'', createdAt: Date.now(), accountPlan:'gratis' };
         state.users[l.seller].ratingSum = (state.users[l.seller].ratingSum || 0) + stars;
         state.users[l.seller].ratingCount = (state.users[l.seller].ratingCount || 0) + 1;
-        const ok1 = await saveListings();
+        const ok1 = await saveListings(l);
         const ok2 = await saveUsers();
         if(!ok1 || !ok2){
           rateMsg.appendChild(el('div',{class:'msg err'},['Não foi possível registrar agora. Tente novamente.']));
@@ -2494,8 +2497,12 @@
   checkAuthRedirect();
 
   Promise.all([loadState(), loadPokedex()]).then(async ()=>{
-    if(runListingLifecycle()){
-      await saveListings();
+    const changedListings = runListingLifecycle();
+    if(changedListings.length > 0){
+      const myId = state.users[state.currentUser] && state.users[state.currentUser].id;
+      const amAdmin = isAdmin(state.currentUser);
+      const persistable = amAdmin ? changedListings : changedListings.filter(l => l.sellerId === myId);
+      if(persistable.length > 0) await saveListings(persistable);
     }
     render();
   });
